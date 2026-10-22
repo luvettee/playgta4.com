@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>game</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="stylesheet" href="shell.css">
+</head>
+<body>
+<!-- WebGPU draws into #screen (owned by gpu_worker.js); SDL listens for input on the transparent #canvas above it. -->
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<canvas id="screen"></canvas>
+
+<div id="boot">
+  <div class="boot-card">
+    <div class="boot-mark">LR</div>
+    <h1>Liberty Recompiled</h1>
+    <p class="boot-sub">Grand Theft Auto IV &middot; WebAssembly</p>
+    <div class="boot-bar"><div id="boot-progress"></div></div>
+    <p id="boot-status">Checking your browser&hellip;</p>
+    <ul id="boot-checks"></ul>
+    <p class="boot-legal">No game assets are included. The server reads the files you
+      extracted from your own copy of the game.</p>
+  </div>
+</div>
+
+<div id="fatal" hidden>
+  <div class="fatal-card">
+    <h2 id="fatal-title">The game stopped</h2>
+    <pre id="fatal-message"></pre>
+  </div>
+</div>
+
+<div id="log" hidden></div>
+
+
+<script src="audio_output.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>

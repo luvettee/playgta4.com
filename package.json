@@ -1,0 +1,10 @@
+{
+  "name": "playgta4-local",
+  "private": true,
+  "scripts": {
+    "start": "node runtime/launch.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

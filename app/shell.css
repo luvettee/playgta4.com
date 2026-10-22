@@ -1,0 +1,203 @@
+:root {
+  --bg: #0b0d10;
+  --fg: #e7ebf0;
+  --dim: #8b96a5;
+  --accent: #d9a441;
+  --line: #1e242c;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  background: var(--bg);
+}
+
+/* ── Boot splash ─────────────────────────────────────────────────────────── */
+#boot {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 35%, #161b22 0%, #07090b 70%);
+  z-index: 10;
+  transition: opacity 320ms ease;
+}
+
+#boot.boot-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-card {
+  width: min(460px, 82vw);
+  text-align: center;
+}
+
+.boot-mark {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.boot-card h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.boot-sub {
+  margin: 6px 0 22px;
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 0.3px;
+}
+
+.boot-bar {
+  height: 3px;
+  background: var(--line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#boot-progress {
+  height: 100%;
+  width: 4%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+#boot-status {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+  min-height: 16px;
+}
+
+.boot-legal {
+  margin-top: 28px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #5b6673;
+}
+
+/* ── Fatal error ─────────────────────────────────────────────────────────── */
+#fatal {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0a0c0f;
+  z-index: 20;
+}
+
+#fatal[hidden], #log[hidden] {
+  display: none;
+}
+
+.fatal-card {
+  width: min(620px, 86vw);
+}
+
+.fatal-card h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+  color: #ff7a7a;
+}
+
+.fatal-card pre {
+  margin: 0;
+  padding: 14px;
+  max-height: 40vh;
+  overflow: auto;
+  background: #11151a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: #c8d1dc;
+}
+
+code {
+  background: #151a20;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ── Game page additions ───────────────────────────────────────────────── */
+#boot-checks {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  text-align: left;
+  font-size: 13px;
+}
+#boot-checks li { margin: 4px 0; }
+#boot-checks li.ok { color: #7bd88f; }
+#boot-checks li.bad { color: #ff7b7b; }
+#log {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 40%;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.85);
+  color: #cfd6df;
+  font: 12px/1.4 ui-monospace, Menlo, monospace;
+  white-space: pre-wrap;
+  z-index: 20;
+}
+
+#screen, #canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#screen { background: #000; }
+#canvas { background: transparent; z-index: 1; }
+
+#fullscreen {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  padding: 8px 12px;
+  border: 1px solid #ffffff55;
+  border-radius: 6px;
+  background: #0009;
+  color: white;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.45;
+}
+#fullscreen:hover, #fullscreen:focus-visible { opacity: 1; }
+
+/* Launch directly into the game; retain the independent error overlay. */
+#boot { display: none !important; }

@@ -1,0 +1,29 @@
+playgta4.com — local game server
+
+Requires Node.js 18+ on macOS, Linux, or Windows, and a browser supporting
+WebGPU, WebAssembly memory64, SharedArrayBuffer, and AudioWorklet.
+Browser support and performance depend on your browser, GPU, and drivers.
+
+Start from this folder:
+  macOS / Linux / Bash: ./start.sh
+  Any OS, including Windows: node runtime/launch.js
+  Or: npm start (no npm install needed)
+
+Open http://localhost:3001/ yourself. No browser is bundled or opened.
+Click the game to enable audio/input. Stop the server with Control+C.
+Use ./start.sh --port 3002 or node runtime/launch.js --port 3002 to change port.
+The server listens on loopback by default.
+
+Keep this folder together when moving it. The game engine is WebAssembly;
+no platform-specific game executable or build tools are required.
+
+app/       Game engine, shaders, and GPU/audio/IO/input browser adapters.
+game/      Your prepared game files.
+runtime/   Portable JavaScript HTTP server and entry point.
+
+Controls: WASD to move/drive, mouse to look, F to enter/leave a car.
+Alt+Enter toggles fullscreen. No startup overlay or fullscreen button.
+Browser caches/storage belong to whichever browser and URL you use.
+This package preserves the current build's save support and limitations.
+
+This folder contains your game assets; keep it for personal use.

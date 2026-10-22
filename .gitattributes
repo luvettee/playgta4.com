@@ -1,0 +1,4 @@
+game/** filter=lfs diff=lfs merge=lfs -text
+app/liberty.wasm filter=lfs diff=lfs merge=lfs -text
+app/shaders/pack.json filter=lfs diff=lfs merge=lfs -text
+*.sh text eol=lf

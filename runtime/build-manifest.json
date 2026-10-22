@@ -1,0 +1,19 @@
+{
+  "packaged": "2026-10-21",
+  "platform": "portable browser WebAssembly; Node.js host",
+  "gameFiles": 1702,
+  "sha256": {
+    "app/boot.js": "850f657bc1a534830e0fb35b17780aacdd328a4314397b94a90dca0fed023a2c",
+    "app/index.html": "aa4bdb0279592b5d46db2b0cd15da42db0e4ab0e09a4554b5eaa6e22e676a222",
+    "app/gpu_worker.js": "d20d0d698a7e0e77cfba7282fcc318f226a63715a974e8bf9c911fa52417386e",
+    "app/audio_worklet.js": "4ad95735fbd784598184e0d41057cd24f9c5594c514bf9835395c2b1af52dee2",
+    "app/shell.css": "c8f7045bd988568795fa136cb5defafb7e3fa4d661f76f945ed4a515befffedf",
+    "app/favicon.jpg": "57e0a9085232099cff734a37413c4616b8045898152c88dc6400018dae49525f",
+    "app/audio_output.js": "dbdcb5515c35fd50e4724d6ca32d9549b12440f70a77a168cc33d8c7bd8a9575",
+    "app/io_worker.js": "eff9bddfdc8147398ae8c987d57618f43243bbbdca0f930b59c5646b7f0a67b9",
+    "app/liberty.wasm": "35067994d461f7becf2ce941e71f876eac50bcc0745ff04f1aeda9695b0099f5",
+    "app/liberty.js": "0d395d8ad094cded212e361c3e128df9d6a2a9d44d52ba9e6b16275b71d01097",
+    "app/shaders/pack.json": "1c80d40d30b4d84eec94e2039ab180f42afeddea52cb3d92dd94cc350d75b595",
+    "app/shaders/pack_meta.json": "2a36694419687f475638cdd7740fa54a90c3654cab6fb6134ce06d91a13719d1"
+  }
+}
