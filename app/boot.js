@@ -5,10 +5,8 @@
 	const statusEl = document.getElementById('boot-status');
 	const progressEl = document.getElementById('boot-progress');
 	const checksEl = document.getElementById('boot-checks');
-	const logEl = document.getElementById('log');
 	const params = new URLSearchParams(location.search);
 	let nativeFatal = '';
-	const audioProfilePrevious = new Map();
 
 	function status(text, pct) {
 		statusEl.textContent = text;
@@ -22,19 +20,13 @@
 		document.getElementById('boot').classList.add('boot-hidden');
 	}
 
-	const logLines = [];
 	function log(line, isError) {
 		line = String(line);
-		(isError ? console.warn : console.log)(line);
+		if (isError) console.warn(line);
 		if (line.includes('[FATAL]')) {
 			nativeFatal = line;
 			fatal('The engine aborted', line);
 		}
-		logLines.push(line);
-		if (logLines.length > 400) logLines.shift();
-		if (!logEl.hidden) logEl.textContent = logLines.join('\n');
-		// Mirror to the dev server's terminal (web/server.js POST /log) when ?log=1.
-		if (params.get('log') === '1') fetch('/log', { method: 'POST', body: line }).catch(() => {});
 	}
 	const fullscreenButton = document.getElementById('fullscreen');
 	function toggleFullscreen() {
@@ -52,10 +44,6 @@
 			event.stopImmediatePropagation();
 			toggleFullscreen();
 			return;
-		}
-		if (event.key === 'F9') {
-			logEl.hidden = !logEl.hidden;
-			logEl.textContent = logLines.join('\n');
 		}
 	}, true);
 
@@ -88,181 +76,208 @@
 		return;
 	}
 
-	// The GPU worker owns the WebGPU device and the #screen canvas. It starts once the renderer
-	// (gta4_web) announces its command ring in shared memory.
-	const screen = document.getElementById('screen');
-	const gpu = new Worker('gpu_worker.js');
-	let gpuStarted = false;
-	gpu.onmessage = (event) => {
-		if (event.data.log) log('[gpu] ' + event.data.log, false);
-		if (event.data.stats) log('[gpu trace] ' + JSON.stringify(event.data.stats));
-		if (event.data.progress) {
-			const progress = event.data.progress;
-			const percent = Math.round(progress.completed / progress.total * 100);
-			status(`${progress.label}… ${percent}%`, 40 + percent * 0.6);
-		}
-		if (event.data.error) fatal('Graphics failed', event.data.error);
-		if (event.data.ready) {
-			status('Graphics ready.', 100);
-			document.getElementById('boot').classList.add('boot-hidden');
-		}
-	};
-	gpu.onerror = (event) => fatal('Graphics worker failed', event.message || 'The GPU worker stopped.');
-	function pixelSize() {
-		const ratio = window.devicePixelRatio || 1;
-		return { width: Math.round(window.innerWidth * ratio), height: Math.round(window.innerHeight * ratio) };
-	}
-	window.addEventListener('resize', () => {
-		if (gpuStarted) gpu.postMessage(Object.assign({ resize: true }, pixelSize()));
-	});
-	let engine = null;
-	const tracedContexts = new Set();
-	function traceGuest(stackPointer, linkRegister, base, source = 'guest') {
-		if (params.get('trace') !== '1' || tracedContexts.has(stackPointer) || tracedContexts.size >= 8) return;
-		tracedContexts.add(stackPointer);
 
-		let samples = 0;
-		const timer = setInterval(() => {
-			if (++samples === 30) clearInterval(timer);
-			const view = new DataView(engine.wasmMemory.buffer);
-			const hex = (n) => n.toString(16).padStart(8, '0');
-			const host = (address) => {
-				if (address >= 0xe0000000) return base + 0x100001000 + address - 0xe0000000;
-				if (address >= 0xc0000000) return base + 0x100000000 + address - 0xc0000000;
-				if (address >= 0xa0000000) return base + 0x100000000 + address - 0xa0000000;
-				if (address >= 0x90000000) return base + address - 0x10000000;
-				if (address >= 0x7f000000 && address < 0x80000000) return base + 0x100000000 + address - 0x7f000000;
-				return base + address;
-			};
-			let sp = view.getUint32(stackPointer, true);
-			const frames = [];
-			for (let depth = 0; sp && depth < 12; depth++) {
-				const at = host(sp);
-				if (at < 0 || at + 12 > view.byteLength) break;
-				const next = view.getUint32(at);
-				if (next <= sp) break;
-				const savedLink = host(next) - 8;
-				if (savedLink < 0 || savedLink + 4 > view.byteLength) break;
-				frames.push(hex(sp) + ':' + hex(view.getUint32(savedLink)));
-				sp = next;
-			}
-			const registers = [3, 5, 6, 7, 8, 9, 10, 11, 27, 28, 29, 30, 31].map((n) =>
-				'r' + n + '=' + hex(view.getUint32(stackPointer - 16 + (n === 3 ? 0 : n * 8), true)));
-			log('[guest trace] source=' + source + ' lr=' + hex(view.getUint32(linkRegister, true)) + ' ' + registers.join(' ') + ' stack=' + frames.join(' '));
-			const screenIndex = view.getUint32(host(0x831d5340));
-			const screenRecord = host(0x831d5498 + screenIndex * 400);
-			log('[presentation trace] active=' + view.getUint8(host(0x831d5335)) +
-				' pending=' + view.getUint8(host(0x831d5348)) + ' screen=' + screenIndex +
-				' count=' + view.getUint32(host(0x831d5344)) +
-				' elapsed=' + view.getFloat32(host(0x831d5338)) +
-				(screenIndex < 64 && screenRecord + 12 <= view.byteLength ?
-					' duration=' + view.getUint32(screenRecord) + ' marker=' + view.getUint32(screenRecord + 8) : ''));
-			const pathAt = host(view.getUint32(stackPointer - 16 + 29 * 8, true));
-			const pathBytes = new Uint8Array(view.buffer, pathAt, Math.min(128, view.byteLength - pathAt));
-			log('[guest trace] path=' + new TextDecoder().decode(pathBytes.slice(0, pathBytes.indexOf(0) < 0 ? 128 : pathBytes.indexOf(0))));
-		}, 3000);
-	}
-	function startGpu(ring) {
-		if (gpuStarted) return;
-		gpuStarted = true;
-		const size = pixelSize();
-		screen.width = size.width;
-		screen.height = size.height;
-		const offscreen = screen.transferControlToOffscreen();
-		gpu.postMessage({ init: true, memory: engine.wasmMemory, ring, canvas: offscreen,
-			profileGPU: params.get('perf') === '1' && params.get('gpuProfile') !== '0' }, [offscreen]);
-		if (params.get('trace') === '1') {
-			let samples = 0;
-			const timer = setInterval(() => {
-				gpu.postMessage({ stats: true });
-				if (++samples === 5) clearInterval(timer);
-			}, 5000);
-		}
-		status('Graphics starting\u2026', 40);
-	}
+    const append = (line) => log(line, false);
+    const configure = function configure(search) {
+  const params = new URLSearchParams(search);
+  // Keep the packaged app's args= syntax; repeated native arg= values win.
+  const args = (params.get('args') || '').split(/\s+/).filter(Boolean).concat(params.getAll('arg'));
+  const has = name => args.some(arg => arg === '--' + name || arg.startsWith('--' + name + '='));
+  const add = (name, value) => { if (!has(name)) args.push('--' + name + '=' + value); };
+  add('fullscreen', 'false');
+  if (!has('video_mode_width') && !has('video_mode_height')) add('resolution', '720p');
+  add('gta4_aspect_ratio', '16:9');
+  add('gta4_reflection_resolution', 'original');
+  add('gta4_shadow_map_base_size', '256');
+  add('gta4_shadow_distance_scale', '1');
+  add('gta4_draw_distance_scale', '1');
+  // All draw inputs are captured before this native acknowledgment. The
+  // existing present/GPU limits still bound queued work and buffer reuse.
+  add('webgpu_early_frame_ack', 'true');
+  // Keep diagnostics disabled, including when an old bookmarked URL enables them.
+  const diagnostics = {
+   diagnostics: 'false', diagnostics_categories: '', webgpu_perf_report: 'false',
+   webgpu_gpu_timing: 'false', webgpu_trace_frame: '0', webgpu_trace_pixel: '',
+   gta4_transition_diagnostics: 'off', log_level: 'error',
+  };
+  for (const [name, value] of Object.entries(diagnostics)) {
+   for (let i = args.length - 1; i >= 0; i--) {
+    if (args[i] === '--' + name || args[i].startsWith('--' + name + '=')) args.splice(i, 1);
+   }
+   args.push('--' + name + '=' + value);
+  }
+  return args;
+ };
 
-	status('Downloading the engine…', 5);
-	const script = document.createElement('script');
-	script.src = 'liberty.js';
-	script.onerror = () => fatal('Engine missing', 'liberty.js was not found. Build it with ./web/build.sh.');
-	script.onload = () => {
-		// Runtime logging is opt-in on desktop; in the browser the console is the only log.
-		const customArgs = (params.get('args') || '').split(' ').filter(Boolean);
-		const customFlags = new Set(customArgs.map(arg => arg.split('=')[0]));
-		// Keep the browser render graph independent of the initial window shape.
-		// Use the original reflection/shadow budgets and avoid Retina scene rendering.
-		const defaults = ['--diagnostics=true', '--diagnostics_categories=logging',
-			'--fullscreen=false', '--resolution=720p', '--gta4_aspect_ratio=16:9',
-			'--gta4_reflection_resolution=original', '--gta4_shadow_map_base_size=256',
-			'--gta4_shadow_distance_scale=1', '--gta4_draw_distance_scale=1'];
-		const args = defaults.filter(arg => !customFlags.has(arg.split('=')[0]) &&
-			!(arg.startsWith('--resolution=') &&
-				(customFlags.has('--video_mode_width') || customFlags.has('--video_mode_height'))))
-			.concat(customArgs);
-		engine = {
-			canvas: document.getElementById('canvas'),
-			prepareAudioOutput: (module) => LibertyAudioOutput.prepare(module),
-			arguments: args,
-			print: (line) => log(line, false),
-			printErr: (line) => log(line, true),
-			setStatus: (text) => text && status(text),
-			onAudioProgress: (info) => {
-				const percent = info.total ? Math.floor(info.completed / info.total * 100) : 0;
-				status(`Preparing audio… ${percent}%`, 10 + percent * 0.2);
-			},
-			onIoReady: (info) => {
-				log(`Audio prepared: ${(info.audioBytes / 1048576).toFixed(1)} MB.`, false);
-				status(`Audio ready. Starting ${info.files} game files…`, 30);
-				if (params.get('trace') === '1' || params.get('perf') === '1') {
-					engine.ioWorker.addEventListener('message', (event) => {
-						if (event.data.stats) log('[io trace] ' + JSON.stringify(event.data));
-					});
-					setInterval(() => {
-						engine.ioWorker.postMessage({ stats: true });
-						if (gpuStarted) gpu.postMessage({ stats: true });
-						if (engine.audioOutputStats) log('[audio trace] ' + JSON.stringify(engine.audioOutputStats()));
-						if (engine._liberty_audio_profile && params.get('audioProfile') !== '0') {
-							const at = Number(engine._liberty_audio_profile());
-							const count = new Uint32Array(engine.wasmMemory.buffer, at, 1)[0];
-							const values = new Uint32Array(engine.wasmMemory.buffer, at + 4, count * 4);
-							const profile = [];
-							for (let i = 0; i < count; ++i) {
-								const row = Array.from(values.subarray(i * 4, i * 4 + 4));
-								if (!row[0]) continue;
-								const previous = audioProfilePrevious.get(row[0]) || [row[0], 0, 0, 0];
-								profile.push({ fn: row[0].toString(16), calls: (row[1] - previous[1]) >>> 0,
-									ms: ((row[2] - previous[2]) >>> 0) / 1000,
-									selfMs: ((row[3] - previous[3]) >>> 0) / 1000 });
-								audioProfilePrevious.set(row[0], row);
-							}
-							log('[audio profile] ' + JSON.stringify(profile.sort((a, b) => b.selfMs - a.selfMs)));
-						}
-						if (engine._liberty_audio_stats) {
-							const at = Number(engine._liberty_audio_stats());
-							const stats = new Uint32Array(engine.wasmMemory.buffer, at, 11);
-							const peak = new DataView(engine.wasmMemory.buffer).getFloat32(at + 24, true);
-							log('[audio mix] ' + JSON.stringify({ submitted: stats[0], consumed: stats[1],
-								silent: stats[2], queued: stats[3], clipped: stats[4], nonFinite: stats[5], peak,
-								mixerCalls: stats[7], mixerMs: stats[8] / 1000, mixerMaxMs: stats[9] / 1000,
-								callback: stats[10].toString(16) }));
-						}
-					}, 5000);
-				}
-			},
-			onRuntimeInitialized: () => {
-				status('Audio ready. Engine starting…', 30);
-				if ((params.get('perf') === '1' || params.get('trace') === '1') &&
-					params.get('audioProfile') !== '0' && engine._liberty_audio_profile_enable) {
-					engine._liberty_audio_profile_enable(1);
-				}
-			},
-			onAbort: (what) => fatal('The engine aborted',
-				what ? String(what) : 'The native runtime aborted. Press F9 to view the engine log.'),
-			onExit: (code) => code && fatal('The engine exited', 'exit code ' + code),
-			onGpuRing: (ring) => startGpu(ring),
-			onGuestTrace: traceGuest,
-		};
-		createLibertyModule(engine).catch((error) => fatal('The engine failed to start', String(error && error.stack || error)));
-	};
-	document.body.appendChild(script);
+    function mountGameFiles() {
+      const probe = new XMLHttpRequest();
+      probe.open('GET', '/game/index.json', false);
+      try { probe.send(); } catch (e) { return; }
+      if (probe.status !== 200) return;
+      const files = JSON.parse(probe.responseText).files;
+      const root = '/data/LibertyRecomp/game';
+      ENV.XDG_DATA_HOME = '/data';
+      const CHUNK = 4 << 20;
+      // ?preload=1 / ?preload=0 override the hostname check, e.g. for an SSH
+      // tunnel, where the browser sees localhost but the data crosses a network.
+      const forced = new URLSearchParams(location.search).get('preload');
+      const REMOTE = forced === '1' ? true : forced === '0' ? false
+        : !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+      // Remote visitors preload PRELOAD_BYTES before the game starts; the cache
+      // has to hold all of it, with headroom for read-ahead.
+      const PRELOAD_BYTES = 500 << 20, MAX_CACHED = REMOTE ? PRELOAD_BYTES / CHUNK + 32 : 128;
+      // Reads block the title, so over a slow link every uncached chunk stalls
+      // the game (and its clocks) for a full round trip. After each read, fetch
+      // the next chunks asynchronously so later reads hit the cache.
+      // Local reads are fast enough that this would only add load, so it is
+      // skipped on loopback.
+      const READ_AHEAD = REMOTE ? 3 : 0, MAX_PENDING = 4;
+      const cache = new Map();
+      const pending = new Set();
+      const remember = (key, bytes) => {
+        cache.set(key, bytes);
+        if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value);
+      };
+      const prefetchChunk = (url, index, size) => {
+        const key = url + '#' + index;
+        if (index * CHUNK >= size || cache.has(key) || pending.has(key) || pending.size >= MAX_PENDING) return;
+        pending.add(key);
+        const start = index * CHUNK, end = Math.min(size, start + CHUNK) - 1;
+        fetch(url, { headers: { Range: 'bytes=' + start + '-' + end } })
+          .then((r) => (r.status === 206 || r.status === 200) ? r.arrayBuffer() : null)
+          .then((buf) => { if (buf && !cache.has(key)) remember(key, new Uint8Array(buf)); })
+          .catch(() => {})
+          .finally(() => pending.delete(key));
+      };
+      const fetchChunk = (url, index, size) => {
+        const key = url + '#' + index;
+        let bytes = cache.get(key);
+        if (bytes) {
+          cache.delete(key); cache.set(key, bytes);
+        } else {
+          bytes = readChunk(url, index, size);
+        }
+        for (let ahead = 1; ahead <= READ_AHEAD; ahead++) prefetchChunk(url, index + ahead, size);
+        return bytes;
+      };
+      const readChunk = (url, index, size) => {
+        const key = url + '#' + index;
+        const start = index * CHUNK, end = Math.min(size, start + CHUNK) - 1;
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', url, false);
+        xhr.setRequestHeader('Range', 'bytes=' + start + '-' + end);
+        xhr.overrideMimeType('text/plain; charset=x-user-defined');
+        xhr.send();
+        if (xhr.status !== 206 && xhr.status !== 200) throw new FS.ErrnoError(5);
+        const text = xhr.responseText;
+        const bytes = new Uint8Array(text.length);
+        for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i) & 0xff;
+        remember(key, bytes);
+        return bytes;
+      };
+      for (const [path, size] of files) {
+        const slash = path.lastIndexOf('/');
+        const dir = root + (slash >= 0 ? '/' + path.slice(0, slash) : '');
+        FS.mkdirTree(dir);
+        const node = FS.createFile(dir, path.slice(slash + 1), null, true, false);
+        const url = '/game/' + path.split('/').map(encodeURIComponent).join('/');
+        node.usedBytes = size;
+        node.stream_ops = Object.assign({}, node.stream_ops, {
+          read(stream, buffer, offset, length, position) {
+            if (position >= size) return 0;
+            length = Math.min(length, size - position);
+            let done = 0;
+            while (done < length) {
+              const at = position + done, index = Math.floor(at / CHUNK);
+              const chunk = fetchChunk(url, index, size);
+              const from = at - index * CHUNK, n = Math.min(length - done, chunk.length - from);
+              buffer.set(chunk.subarray(from, from + n), offset + done);
+              done += n;
+            }
+            return done;
+          },
+          // The title maps files (default.xex, the disc images) rather than
+          // reading them; copy the mapped range in like MEMFS does.
+          mmap(stream, length, position) {
+            const ptr = mmapAlloc(length);
+            node.stream_ops.read(stream, HEAP8, ptr, length, position);
+            return { ptr, allocated: true };
+          },
+        });
+      }
+      // Remote devices download the first PRELOAD_BYTES before the game starts
+      // (run dependency holds main() back): the files the opening reads first,
+      // then the rest in manifest order. Local access skips this.
+      if (REMOTE) {
+        const sizes = new Map(files);
+        const urlOf = (path) => '/game/' + path.split('/').map(encodeURIComponent).join('/');
+        const first = ['xbox360.rpf', 'common.rpf', 'xbox360/anim/anim.img', 'xbox360/audio/sfx/speech.rpf',
+                       'xbox360/models/cdimages/componentpeds.img', 'xbox360/data/cdimages/navmeshes.img']
+          .filter((p) => sizes.has(p));
+        const queue = [];
+        for (const path of first) for (let i = 0; i < 8 && i * CHUNK < sizes.get(path); i++) queue.push([path, i]);
+        for (const path of first.concat(files.map((f) => f[0]).filter((p) => !first.includes(p))))
+          for (let i = 0; i * CHUNK < sizes.get(path); i++) queue.push([path, i]);
+        const total = Math.min(PRELOAD_BYTES, queue.length * CHUNK);
+        let loaded = 0, next = 0, active = 0;
+        const seen = new Set();
+        addRunDependency('preload-game');
+        const finish = () => { statusEl.textContent = 'Starting…'; removeRunDependency('preload-game'); };
+        const pump = () => {
+          while (active < 6 && loaded < PRELOAD_BYTES && next < queue.length) {
+            const [path, index] = queue[next++];
+            const key = path + '#' + index;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const url = urlOf(path), size = sizes.get(path);
+            const start = index * CHUNK, end = Math.min(size, start + CHUNK) - 1;
+            active++;
+            fetch(url, { headers: { Range: 'bytes=' + start + '-' + end } })
+              .then((r) => (r.status === 206 || r.status === 200) ? r.arrayBuffer() : null)
+              .then((buf) => {
+                if (!buf) return;
+                if (!cache.has(url + '#' + index)) remember(url + '#' + index, new Uint8Array(buf));
+                loaded += buf.byteLength;
+              })
+              .catch(() => {})
+              .finally(() => {
+                active--;
+                statusEl.textContent = 'Preloading game files… ' + Math.min(100, Math.floor(loaded * 100 / total)) +
+                  '% (' + (Math.min(loaded, total) / 1048576 | 0) + ' / ' + (total / 1048576 | 0) + ' MB)';
+                if ((loaded >= PRELOAD_BYTES || next >= queue.length) && active === 0) finish(); else pump();
+              });
+          }
+          if (active === 0 && (loaded >= PRELOAD_BYTES || next >= queue.length)) finish();
+        };
+        statusEl.textContent = 'Preloading game files… 0%';
+        pump();
+      }
+      append('Mounted ' + files.length + ' game files from the server');
+    }
+
+    const input = document.getElementById('canvas');
+    for (const name of ['requestFullscreen', 'webkitRequestFullscreen']) {
+      input[name] = (options) => (document.documentElement.requestFullscreen ||
+        document.documentElement.webkitRequestFullscreen).call(document.documentElement, options);
+    }
+    status('Downloading the engine…', 10);
+    window.Module = {
+      canvas: input,
+      arguments: configure(location.search),
+      print: (text) => log(text, false),
+      printErr: (text) => log(text, true),
+      setStatus: (text) => { if (text) status(text); },
+      preRun: [mountGameFiles],
+      onRuntimeInitialized: () => {
+        status('Running', 100);
+        document.getElementById('boot').classList.add('boot-hidden');
+        input.focus();
+      },
+      onAbort: (what) => fatal('The engine aborted', String(what || 'Reload the page to try again.')),
+      onExit: (code) => { if (code) fatal('The engine exited', 'exit code ' + code); },
+    };
+    const script = document.createElement('script');
+    script.src = 'liberty.js';
+    script.onerror = () => fatal('Engine missing', 'Could not load liberty.js.');
+    document.body.appendChild(script);
 })();

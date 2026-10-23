@@ -112,7 +112,7 @@ html, body {
   z-index: 20;
 }
 
-#fatal[hidden], #log[hidden] {
+#fatal[hidden] {
   display: none;
 }
 
@@ -157,21 +157,6 @@ code {
 #boot-checks li { margin: 4px 0; }
 #boot-checks li.ok { color: #7bd88f; }
 #boot-checks li.bad { color: #ff7b7b; }
-#log {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 40%;
-  overflow: auto;
-  margin: 0;
-  padding: 8px 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #cfd6df;
-  font: 12px/1.4 ui-monospace, Menlo, monospace;
-  white-space: pre-wrap;
-  z-index: 20;
-}
 
 #screen, #canvas {
   position: fixed;
