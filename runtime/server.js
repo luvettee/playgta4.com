@@ -173,6 +173,13 @@ async function buildGameIndex() {
 	return { root: 'game:', files: out };
 }
 
+async function handleLog(req, res) {
+	const chunks = [];
+	for await (const c of req) chunks.push(c);
+	process.stdout.write('[browser] ' + Buffer.concat(chunks).toString('utf8').trimEnd() + '\n');
+	send(res, 204, {}, '');
+}
+
 const server = http.createServer(async (req, res) => {
 	let url;
 	try {
@@ -182,6 +189,7 @@ const server = http.createServer(async (req, res) => {
 	}
 	const p = url.pathname;
 	try {
+		if (p === '/log' && req.method === 'POST') return await handleLog(req, res);
 		if (p === '/favicon.ico') return send(res, 204, { 'Cache-Control': 'max-age=86400' }, '');
 		if (p === '/game/index.json') {
 			if (!fs.existsSync(GAME)) return send(res, 404, { 'Cache-Control': 'no-store' }, 'no game folder');
